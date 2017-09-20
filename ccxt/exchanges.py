@@ -2475,7 +2475,7 @@ class bitfinex2 (bitfinex):
         # ticker = self.publicGetTickersSymbols({
         #     'symbols': ','.join([self.market_id(s) for s in symbols]),
         # })
-        url = urllib.parse.urljoin(self.urls['api'], self.version, 'tickers/')
+        url = urllib.parse.urljoin('/'.join([self.urls['api'], self.version]), 'tickers/')
         print(url)
         response = requests.get(url, params={"symbols": symbols})
         print(response)
