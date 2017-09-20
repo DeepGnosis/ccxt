@@ -2310,7 +2310,7 @@ class bitfinex2 (bitfinex):
                 'public': {
                     'get': [
                         'platform/status',
-                        'tickers/{symbols}', # replies with an empty list :\
+                        'tickers?symbols={symbols}', # replies with an empty list :\
                         'ticker/{symbol}',
                         'trades/{symbol}/hist',
                         'book/{symbol}/{precision}',
