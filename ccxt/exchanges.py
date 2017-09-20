@@ -2471,7 +2471,7 @@ class bitfinex2 (bitfinex):
 
     def fetch_tickers(self, symbols):
         ticker = self.publicGetTickersSymbols({
-            'symbols': [self.market_id(s) for s in symbols],
+            'symbols': ','.join([self.market_id(s) for s in symbols]),
         })
         timestamp = self.milliseconds()
         bid, bidSize, ask, askSize, change, percentage, last, volume, high, low = ticker
