@@ -2310,7 +2310,7 @@ class bitfinex2 (bitfinex):
                 'public': {
                     'get': [
                         'platform/status',
-                        'tickers', # replies with an empty list :\
+                        'tickers/{symbols}', # replies with an empty list :\
                         'ticker/{symbol}',
                         'trades/{symbol}/hist',
                         'book/{symbol}/{precision}',
@@ -2446,6 +2446,32 @@ class bitfinex2 (bitfinex):
     def fetch_ticker(self, symbol):
         ticker = self.publicGetTickerSymbol({
             'symbol': self.market_id(symbol),
+        })
+        timestamp = self.milliseconds()
+        bid, bidSize, ask, askSize, change, percentage, last, volume, high, low = ticker
+        return {
+            'timestamp': timestamp,
+            'datetime': self.iso8601(timestamp),
+            'high': high,
+            'low': low,
+            'bid': bid,
+            'ask': ask,
+            'vwap': None,
+            'open': None,
+            'close': None,
+            'first': None,
+            'last': last,
+            'change': change,
+            'percentage': percentage,
+            'average': None,
+            'baseVolume': None,
+            'quoteVolume': volume,
+            'info': ticker,
+        }
+
+    def fetch_tickers(self, symbols):
+        ticker = self.publicGetTickersSymbols({
+            'symbols': [self.market_id(s) for s in symbols],
         })
         timestamp = self.milliseconds()
         bid, bidSize, ask, askSize, change, percentage, last, volume, high, low = ticker
