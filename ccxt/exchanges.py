@@ -2480,7 +2480,8 @@ class bitfinex2 (bitfinex):
         response = requests.get(url, params={"symbols": symbols})
         print(response)
 
-        tickers = response['result']
+        tickers = response.json()
+        print(tickers)
         result = {}
         for v in tickers:
             id = v[0]
