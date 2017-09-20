@@ -2477,7 +2477,7 @@ class bitfinex2 (bitfinex):
         # })
         url = '/'.join([self.urls['api'], self.version,'tickers/'])
         print(url)
-        response = requests.get(url, params={"symbols": symbols})
+        response = requests.get(url, params={"symbols": [self.market_id(s) for s in symbols]})
         print(response.__dict__)
 
         tickers = response.json()
