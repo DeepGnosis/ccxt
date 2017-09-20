@@ -2310,7 +2310,7 @@ class bitfinex2 (bitfinex):
                 'public': {
                     'get': [
                         'platform/status',
-                        'tickers?symbols={symbols}', # replies with an empty list :\
+                        'tickers/{symbols}', # replies with an empty list :\
                         'ticker/{symbol}',
                         'trades/{symbol}/hist',
                         'book/{symbol}/{precision}',
@@ -2470,11 +2470,29 @@ class bitfinex2 (bitfinex):
         }
 
     def fetch_tickers(self, symbols):
-        ticker = self.publicGetTickersSymbols({
-            'symbols': ','.join([self.market_id(s) for s in symbols]),
-        })
+        import requests
+        import urllib.parse
+        # ticker = self.publicGetTickersSymbols({
+        #     'symbols': ','.join([self.market_id(s) for s in symbols]),
+        # })
+        url = urllib.parse.urljoin(self.api, self.version, 'tickers/')
+        print(url)
+        response = requests.get(url, params={"symbols": symbols})
+        print(response)
+
+        tickers = response['result']
+        result = {}
+        for v in tickers:
+            id = v[0]
+            market = self.markets_by_id[id]
+            symbol = market['symbol']
+            ticker = v
+            result[symbol] = self.parse_ticker(ticker, market)
+        return result
+
+    def parse_ticker(self, ticker, market):
         timestamp = self.milliseconds()
-        bid, bidSize, ask, askSize, change, percentage, last, volume, high, low = ticker
+        _, bid, bidSize, ask, askSize, change, percentage, last, volume, high, low = ticker
         return {
             'timestamp': timestamp,
             'datetime': self.iso8601(timestamp),
