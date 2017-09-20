@@ -200,6 +200,7 @@ class Exchange(object):
             raise exception_type(' '.join([self.id, method, url, details]))
 
     def fetch(self, url, method='GET', headers=None, body=None):
+        print(url)
         now = self.milliseconds()
         elapsed = now - self.lastRestRequestTimestamp
         if self.enableRateLimit and (elapsed < self.rateLimit):
