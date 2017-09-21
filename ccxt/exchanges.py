@@ -2469,15 +2469,26 @@ class bitfinex2 (bitfinex):
             'info': ticker,
         }
 
-    def fetch_tickers(self, symbols):
+    def fetch_tickers(self, symbols=None):
         import requests
         import urllib.parse
         # ticker = self.publicGetTickersSymbols({
         #     'symbols': ','.join([self.market_id(s) for s in symbols]),
         # })
+        if symbols:
+            symbols = [self.market_id(s) for s in symbols]
+        else:
+            self.load_markets()
+            symbols = []
+            for s in range(0, len(self.symbols)):
+                symbol = self.symbols[s]
+                market = self.markets[symbol]
+                if not market['darkpool']:
+                    symbols.append(market['id'])
+
         url = '/'.join([self.urls['api'], self.version,'tickers/'])
         print(url)
-        response = requests.get(url, params={"symbols": [self.market_id(s) for s in symbols]})
+        response = requests.get(url, params={"symbols": symbols})
         print(response.__dict__)
 
         tickers = response.json()
