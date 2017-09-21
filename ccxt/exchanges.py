@@ -2280,7 +2280,7 @@ class bitfinex2 (bitfinex):
             'name': 'Bitfinex v2',
             'countries': 'US',
             'version': 'v2',
-            'hasFetchTickers': False, # True but at least one pair is required
+            'hasFetchTickers': True, # True but at least one pair is required
             'hasFetchOHLCV': True,
             'timeframes': {
                 '1m': '1m',
