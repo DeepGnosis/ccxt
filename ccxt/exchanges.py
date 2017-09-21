@@ -2493,7 +2493,7 @@ class bitfinex2 (bitfinex):
         # print(response.__dict__)
 
         tickers = response.json()
-        print(tickers)
+        # print(tickers)
         result = {}
         for v in tickers:
             id = v[0]
