@@ -2490,7 +2490,7 @@ class bitfinex2 (bitfinex):
         url = '/'.join([self.urls['api'], self.version,'tickers/'])
         print(url)
         response = requests.get(url, params={"symbols": filter})
-        print(response.__dict__)
+        # print(response.__dict__)
 
         tickers = response.json()
         print(tickers)
