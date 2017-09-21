@@ -2483,8 +2483,7 @@ class bitfinex2 (bitfinex):
             for s in range(0, len(self.symbols)):
                 symbol = self.symbols[s]
                 market = self.markets[symbol]
-                if not market['darkpool']:
-                    symbols.append(market['id'])
+                symbols.append(market['id'])
 
         filter = ','.join(symbols)
 
