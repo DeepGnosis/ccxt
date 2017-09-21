@@ -2486,9 +2486,11 @@ class bitfinex2 (bitfinex):
                 if not market['darkpool']:
                     symbols.append(market['id'])
 
+        filter = ','.join(symbols)
+
         url = '/'.join([self.urls['api'], self.version,'tickers/'])
         print(url)
-        response = requests.get(url, params={"symbols": symbols})
+        response = requests.get(url, params={"symbols": filter})
         print(response.__dict__)
 
         tickers = response.json()
