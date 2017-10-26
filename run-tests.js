@@ -32,11 +32,13 @@ const keys = {
 
 let exchanges = []
 let symbol = 'all'
+let maxConcurrency = Number.MAX_VALUE // no limit
 
 for (const arg of args) {
-    if (arg.startsWith ('--'))   { keys[arg] = true }
-    else if (arg.includes ('/')) { symbol = arg }
-    else                         { exchanges.push (arg) }
+    if (arg.startsWith ('--'))               { keys[arg] = true }
+    else if (arg.includes ('/'))             { symbol = arg }
+    else if (Number.isFinite (Number (arg))) { maxConcurrency = Number (arg) }
+    else                                     { exchanges.push (arg) }
 }
 
 /*  --------------------------------------------------------------------------- */
@@ -54,8 +56,8 @@ if (!exchanges.length) {
 
 /*  --------------------------------------------------------------------------- */
 
-const sleep = ms => new Promise (resolve => setTimeout (resolve, ms))
-const timeout = (ms, promise) => Promise.race ([ promise, sleep (ms).then (() => { throw new Error ('timed out') }) ])
+const sleep = s => new Promise (resolve => setTimeout (resolve, s*1000))
+const timeout = (s, promise) => Promise.race ([ promise, sleep (s).then (() => { throw new Error ('timed out') }) ])
 
 /*  --------------------------------------------------------------------------- */
 
@@ -65,7 +67,7 @@ const exec = (bin, ...args) =>
     stderr,  not separating them into distinct buffers — so that we can show
     the same output as if it were running in a terminal.                        */
 
-    new Promise (return_ => {
+    timeout (120, new Promise (return_ => {
 
         const ps = require ('child_process').spawn (bin, args)
 
@@ -80,11 +82,28 @@ const exec = (bin, ...args) =>
             return_ ({
                 failed: code !== 0,
                 output,
+                hasOutput: output.trim ().length > 0,
                 hasWarnings,
                 warnings: ansi.strip (stderr).match (/^\[[^\]]+\]/g) || []
             })
         })
-    })
+
+    })).catch (e => ({
+
+        failed: true,
+        output: e.message
+
+    })).then (x => Object.assign (x, { hasOutput: x.output.length > 0 }))
+
+/*  ------------------------------------------------------------------------ */
+
+// const execWithRetry = () => {
+
+//     // Sometimes execution (on a remote CI server) is just fails with no
+//     // apparent reason, leaving an empty stdout/stderr behind. I suspect
+//     // it's related to out-of-memory errors. So in that case we will re-try
+//     // until it eventually finalizes.
+// }
 
 /*  ------------------------------------------------------------------------ */
 
@@ -113,16 +132,16 @@ const testExchange = async (exchange) => {
         , allTests = [
 
             { language: 'JavaScript', key: '--js',      exec: ['node',      'test/test.js',       ...args] },
-            { language: 'Python',     key: '--python',  exec: ['python',    'test/test.py',       ...args] },
+            { language: 'Python',     key: '--python',  exec: ['python2',   'test/test.py',       ...args] },
             { language: 'Python 3',   key: '--python3', exec: ['python3',   'test/test_async.py', ...args] },
             { language: 'PHP',        key: '--php',     exec: ['php', '-f', 'test/test.php',      ...args] }
         ]
         , selectedTests  = allTests.filter (t => keys[t.key])
         , scheduledTests = selectedTests.length ? selectedTests : allTests
         , completeTests  = await sequentialMap (scheduledTests, async test => Object.assign (test, await exec (...test.exec)))
-        , failed      = completeTests.find (test => test.failed)
-        , hasWarnings = completeTests.find (test => test.hasWarnings)
-        , warnings    = completeTests.reduce ((total, { warnings }) => total.concat (warnings), [])
+        , failed         = completeTests.find (test => test.failed)
+        , hasWarnings    = completeTests.find (test => test.hasWarnings)
+        , warnings       = completeTests.reduce ((total, { warnings }) => total.concat (warnings), [])
 
 /*  Print interactive log output    */
 
@@ -157,13 +176,66 @@ const testExchange = async (exchange) => {
 
 /*  ------------------------------------------------------------------------ */
 
+function TaskPool (maxConcurrency) {
+    
+    const pending = []
+        , queue   = []
+
+    let numActive = 0
+        
+    return {
+
+        pending,
+        
+        run (task) {
+            
+            if (numActive >= maxConcurrency) { // queue task
+
+                return new Promise (resolve => queue.push (() => this.run (task).then (resolve)))
+
+            } else { // execute task
+
+                let p = task ().then (x => {
+                    numActive--
+                    return (queue.length && (numActive < maxConcurrency))
+                                ? queue.shift () ().then (() => x)
+                                : x
+                })
+                numActive++
+                pending.push (p)
+                return p
+            }
+        }
+    }
+}
+
+/*  ------------------------------------------------------------------------ */
+
+async function testAllExchanges () {
+
+    const taskPool = TaskPool (maxConcurrency)
+    const results = []
+    
+    for (const exchange of exchanges) {
+        taskPool.run (() => testExchange (exchange).then (x => results.push (x)))
+    }
+
+    await Promise.all (taskPool.pending)
+
+    return results
+}
+
+/*  ------------------------------------------------------------------------ */
+
 (async function () {
 
-    log.bright.magenta.noPretty ('Testing'.white, { exchanges, symbol, keys })
+    log.bright.magenta.noPretty ('Testing'.white, Object.assign (
+                                                            { exchanges, symbol, keys },
+                                                            maxConcurrency >= Number.MAX_VALUE ? {} : { maxConcurrency }))
 
-    const tested   = await Promise.all (exchanges.map (testExchange))
-        , warnings = tested.filter  (t => !t.failed && t.hasWarnings)
-        , failed   = tested.filter  (t =>  t.failed)
+    const tested    = await testAllExchanges ()
+        , warnings  = tested.filter (t => !t.failed && t.hasWarnings)
+        , failed    = tested.filter (t =>  t.failed)
         , succeeded = tested.filter (t => !t.failed && !t.hasWarnings)
 
     log.newline ()
@@ -173,9 +245,9 @@ const testExchange = async (exchange) => {
 
     log.newline ()
 
-    if (failed.length)   { log.noPretty.bright.red    ('FAIL'.bgBrightRed.white,    failed  .map (t => t.exchange)) }
-    if (warnings.length) { log.noPretty.bright.yellow ('WARN'.inverse, warnings.map (t => t.exchange)) }
-    
+    if (failed.length)   { log.noPretty.bright.red    ('FAIL'.bgBrightRed.white, failed.map (t => t.exchange)) }
+    if (warnings.length) { log.noPretty.bright.yellow ('WARN'.inverse,           warnings.map (t => t.exchange)) }
+
     log.newline ()
 
     log.bright ('All done,', [failed.length    && (failed.length    + ' failed')   .red,
@@ -184,8 +256,11 @@ const testExchange = async (exchange) => {
 
     if (failed.length) {
 
-        await sleep (2000)
+        await sleep (10) // to fight TravisCI log truncation issue, see https://github.com/travis-ci/travis-ci/issues/8189
         process.exit (1)
+
+    } else {
+        process.exit (0)
     }
 
 }) ();

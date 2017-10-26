@@ -24,54 +24,37 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-#------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
+import asyncio
+import concurrent
+import socket
+import time
+import math
+import random
 
 import aiohttp
-import asyncio
-import base64
-import calendar
-import collections
-import concurrent
-import datetime
-import hashlib
-import json
-import math
-import re
-import socket
-import ssl
-import sys
-import time
 
-#------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
-from ccxt.version import __version__
-
-#------------------------------------------------------------------------------
-
-from ccxt.errors import CCXTError
 from ccxt.errors import ExchangeError
-from ccxt.errors import NotSupported
-from ccxt.errors import AuthenticationError
-from ccxt.errors import InsufficientFunds
-from ccxt.errors import NetworkError
-from ccxt.errors import DDoSProtection
 from ccxt.errors import RequestTimeout
-from ccxt.errors import ExchangeNotAvailable
 
-#------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 from ccxt.exchange import Exchange as BaseExchange
 
-#------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 __all__ = [
     'BaseExchange',
     'Exchange',
 ]
 
-#------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
-class Exchange (BaseExchange):
+
+class Exchange(BaseExchange):
 
     def __init__(self, config={}):
         super(Exchange, self).__init__(config)
@@ -82,6 +65,37 @@ class Exchange (BaseExchange):
         if self.aiohttp_session:
             self.aiohttp_session.close()
 
+    # this method is experimental
+    # async def throttle(self):
+    #     now = self.milliseconds()
+    #     elapsed = now - self.lastRestRequestTimestamp
+    #     if elapsed < self.rateLimit:
+    #         delay = self.rateLimit - elapsed
+    #         await asyncio.sleep(delay / 1000.0)
+
+    # def run_rest_poller_loop
+    #     await asyncio.sleep (exchange.rateLimit / 1000.0)
+
+    async def wait_for_token(self):
+        while self.rateLimitTokens <= 1:
+            # if self.verbose:
+            #     print('Waiting for tokens: Exchange: {0}'.format(self.id))
+            self.add_new_tokens()
+            seconds_delays = [0.001, 0.005, 0.022, 0.106, 0.5]
+            delay = random.choice(seconds_delays)
+            await asyncio.sleep(delay)
+        self.rateLimitTokens -= 1
+
+    def add_new_tokens(self):
+        # if self.verbose:
+        #     print('Adding new tokens: Exchange: {0}'.format(self.id))
+        now = time.monotonic()
+        time_since_update = now - self.rateLimitUpdateTime
+        new_tokens = math.floor((0.8 * 1000.0 * time_since_update) / self.rateLimit)
+        if new_tokens > 1:
+            self.rateLimitTokens = min(self.rateLimitTokens + new_tokens, self.rateLimitMaxTokens)
+            self.rateLimitUpdateTime = now
+
     async def fetch(self, url, method='GET', headers=None, body=None):
         """Perform a HTTP request and return decoded JSON data"""
         headers = headers or {}
@@ -90,7 +104,7 @@ class Exchange (BaseExchange):
                 headers.update({'User-Agent': self.userAgent})
             elif (type(self.userAgent) is dict) and ('User-Agent' in self.userAgent):
                 headers.update(self.userAgent)
-        if len(self.proxy):
+        if self.proxy:
             headers.update({'Origin': '*'})
         headers.update({'Accept-Encoding': 'gzip, deflate'})
         url = self.proxy + url
@@ -98,10 +112,14 @@ class Exchange (BaseExchange):
             print(url, method, url, "\nRequest:", headers, body)
         encoded_body = body.encode() if body else None
         session_method = getattr(self.aiohttp_session, method.lower())
+        if self.enableRateLimit:
+            await self.wait_for_token()
         try:
-            async with session_method(url, data=encoded_body, headers=headers, timeout=(self.timeout / 1000)) as response:
+            async with session_method(url, data=encoded_body, headers=headers, timeout=(self.timeout / 1000), proxy=self.aiohttp_proxy) as response:
                 text = await response.text()
                 self.handle_rest_errors(None, response.status, text, url, method)
+        except socket.gaierror as e:
+            self.raise_error(ExchangeError, url, method, e, None)
         except concurrent.futures._base.TimeoutError as e:
             raise RequestTimeout(' '.join([self.id, method, url, 'request timeout']))
         except aiohttp.client_exceptions.ServerDisconnectedError as e:
@@ -125,4 +143,21 @@ class Exchange (BaseExchange):
         order = await self.fetch_order(id)
         return order['status']
 
-#==============================================================================
+    async def fetch_partial_balance(self, part, params={}):
+        balance = await self.fetch_balance(params)
+        return balance[part]
+
+    async def fetch_l2_order_book(self, symbol, params={}):
+        orderbook = await self.fetch_order_book(symbol, params)
+        return self.extend(orderbook, {
+            'bids': self.sort_by(self.aggregate(orderbook['bids']), 0, True),
+            'asks': self.sort_by(self.aggregate(orderbook['asks']), 0),
+        })
+
+    async def update_order(self, id, symbol, *args):
+        if not self.enableRateLimit:
+            raise ExchangeError(self.id + ' updateOrder() requires enableRateLimit = true')
+        await self.cancel_order(id, symbol)
+        return await self.create_order(symbol, *args)
+
+# =============================================================================
